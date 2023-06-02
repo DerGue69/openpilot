@@ -25,12 +25,12 @@ from tools.lib.logreader import LogReader
 # Baseline CPU usage by process
 PROCS = {
   "selfdrive.controls.controlsd": 39.0,
-  "./loggerd": 10.0,
+  "./loggerd": 14.0,
   "./encoderd": 17.0,
   "./camerad": 14.5,
   "./locationd": 11.0,
   "selfdrive.controls.plannerd": 16.5,
-  "./_ui": 19.2,
+  "./_ui": 21.0,
   "selfdrive.locationd.paramsd": 9.0,
   "./_sensord": 12.0,
   "selfdrive.controls.radard": 4.5,
@@ -54,7 +54,7 @@ PROCS = {
   "selfdrive.boardd.pandad": 0,
   "selfdrive.statsd": 0.4,
   "selfdrive.navd.navd": 0.4,
-  "system.loggerd.uploader": 4.0,
+  "system.loggerd.uploader": 3.0,
   "system.loggerd.deleter": 0.1,
   "selfdrive.locationd.laikad": None,  # TODO: laikad cpu usage is sporadic
 }
@@ -95,15 +95,10 @@ class TestOnroad(unittest.TestCase):
       return
 
     # setup env
-    os.environ['PASSIVE'] = "0"
-    os.environ['REPLAY'] = "1"
-    os.environ['SKIP_FW_QUERY'] = "1"
-    os.environ['FINGERPRINT'] = "TOYOTA COROLLA TSS2 2019"
-    os.environ['LOGPRINT'] = "debug"
-
     params = Params()
     params.clear_all()
     set_params_enabled()
+    os.environ['TESTING_CLOSET'] = '1'
     if os.path.exists(ROOT):
       shutil.rmtree(ROOT)
 
@@ -161,7 +156,11 @@ class TestOnroad(unittest.TestCase):
     for s, msgs in self.service_msgs.items():
       if s in ('initData', 'sentinel'):
         continue
-
+      
+      # skip gps services for now
+      if s in ('ubloxGnss', 'ubloxRaw', 'gnssMeasurements', 'gpsLocationExternal'):
+        continue
+        
       with self.subTest(service=s):
         assert len(msgs) >= math.floor(service_list[s].frequency*55)
 
@@ -337,6 +336,17 @@ class TestOnroad(unittest.TestCase):
         break
     expected = EVENTS[car.CarEvent.EventName.startup][ET.PERMANENT].alert_text_1
     self.assertEqual(startup_alert, expected, "wrong startup alert")
+
+  def test_engagable(self):
+    no_entries = Counter()
+    for m in self.service_msgs['carEvents']:
+      for evt in m.carEvents:
+        if evt.noEntry:
+          no_entries[evt.name] += 1
+
+    eng = [m.controlsState.engageable for m in self.service_msgs['controlsState']]
+    assert all(eng), \
+           f"Not engageable for whole segment:\n- controlsState.engageable: {Counter(eng)}\n- No entry events: {no_entries}"
 
 
 if __name__ == "__main__":

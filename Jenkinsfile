@@ -19,8 +19,7 @@ source ~/.bash_profile
 if [ -f /TICI ]; then
   source /etc/profile
 fi
-
-if [ -d /data/openpilot ]; then
+if [ -f /data/openpilot/launch_env.sh ]; then
   source /data/openpilot/launch_env.sh
 fi
 
@@ -155,6 +154,7 @@ pipeline {
               ["build openpilot", "cd selfdrive/manager && ./build.py"],
               ["check dirty", "release/check-dirty.sh"],
               ["onroad tests", "cd selfdrive/test/ && ./test_onroad.py"],
+              ["time to onroad", "cd selfdrive/test/ && pytest test_time_to_onroad.py"],
               ["test car interfaces", "cd selfdrive/car/tests/ && ./test_car_interfaces.py"],
             ])
           }
@@ -220,7 +220,7 @@ pipeline {
           steps {
             phone_steps("tici-common", [
               ["build", "cd selfdrive/manager && ./build.py"],
-              ["model replay", "cd selfdrive/test/process_replay && NO_NAV=1 ./model_replay.py"],
+              ["model replay", "cd selfdrive/test/process_replay && ./model_replay.py"],
             ])
           }
         }
