@@ -40,7 +40,7 @@ def create_lkas11(packer, frame, car_fingerprint, apply_steer, steer_req,
                          CAR.SANTA_FE_PHEV_2022, CAR.KIA_STINGER_2022, CAR.KIA_K5_HEV_2020, CAR.KIA_CEED):
     values["CF_Lkas_LdwsActivemode"] = int(left_lane) + (int(right_lane) << 1)
     values["CF_Lkas_LdwsOpt_USM"] = 2
-    
+
     # Some cars show an FCA fault when forwarding CF_Lkas_FusionState. Hide FCA Fault:
     values["CF_Lkas_FusionState"] = 0
 
