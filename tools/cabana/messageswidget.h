@@ -1,7 +1,8 @@
 #pragma once
 
 #include <algorithm>
-#include <utility>
+#include <optional>
+#include <set>
 #include <vector>
 
 #include <QAbstractTableModel>
@@ -9,7 +10,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
-#include <QSet>
 #include <QToolBar>
 #include <QTreeView>
 
@@ -34,23 +34,29 @@ public:
   QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
   int columnCount(const QModelIndex &parent = QModelIndex()) const override { return Column::DATA + 1; }
   QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const;
-  int rowCount(const QModelIndex &parent = QModelIndex()) const override { return msgs.size(); }
+  int rowCount(const QModelIndex &parent = QModelIndex()) const override { return items_.size(); }
   void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
   void setFilterStrings(const QMap<int, QString> &filters);
-  void msgsReceived(const QHash<MessageId, CanData> *new_msgs, bool has_new_ids);
+  void msgsReceived(const std::set<MessageId> *new_msgs, bool has_new_ids);
   void filterAndSort();
-  void suppress();
-  void clearSuppress();
   void dbcModified();
-  std::vector<MessageId> msgs;
-  QSet<std::pair<MessageId, int>> suppressed_bytes;
+
+  struct Item {
+    MessageId id;
+    QString name;
+    QString node;
+    bool operator==(const Item &other) const {
+      return id == other.id && name == other.name && node == other.node;
+    }
+  };
+  std::vector<Item> items_;
 
 private:
-  void sortMessages(std::vector<MessageId> &new_msgs);
-  bool matchMessage(const MessageId &id, const CanData &data, const QMap<int, QString> &filters);
+  void sortItems(std::vector<MessageListModel::Item> &items);
+  bool match(const MessageListModel::Item &id);
 
-  QMap<int, QString> filter_str;
-  QSet<uint32_t> dbc_address;
+  QMap<int, QString> filters_;
+  std::set<MessageId> dbc_messages_;
   int sort_column = 0;
   Qt::SortOrder sort_order = Qt::AscendingOrder;
 };
@@ -73,11 +79,6 @@ public:
   void updateHeaderPositions();
   void updateGeometries() override;
   QSize sizeHint() const override;
-
-signals:
-  void filtersUpdated(const QMap<int, QString> &filters);
-
-private:
   void updateFilters();
 
   QMap<int, QLineEdit *> editors;
@@ -91,10 +92,7 @@ public:
   void selectMessage(const MessageId &message_id);
   QByteArray saveHeaderState() const { return view->header()->saveState(); }
   bool restoreHeaderState(const QByteArray &state) const { return view->header()->restoreState(state); }
-  void updateSuppressedButtons();
-
-public slots:
-  void dbcModified();
+  void suppressHighlighted();
 
 signals:
   void msgSelectionChanged(const MessageId &message_id);
@@ -104,6 +102,7 @@ protected:
   void headerContextMenuEvent(const QPoint &pos);
   void menuAboutToShow();
   void setMultiLineBytes(bool multi);
+  void updateTitle();
 
   MessageView *view;
   MessageViewHeader *header;

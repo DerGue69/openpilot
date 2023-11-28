@@ -13,6 +13,8 @@
 #include <QVBoxLayout>
 #include <QtConcurrent>
 
+#include "tools/cabana/streams/replaystream.h"
+
 const int MIN_VIDEO_HEIGHT = 100;
 const int THUMBNAIL_MARGIN = 3;
 
@@ -35,7 +37,7 @@ VideoWidget::VideoWidget(QWidget *parent) : QFrame(parent) {
   setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
   QObject::connect(can, &AbstractStream::paused, this, &VideoWidget::updatePlayBtnState);
   QObject::connect(can, &AbstractStream::resume, this, &VideoWidget::updatePlayBtnState);
-  QObject::connect(can, &AbstractStream::updated, this, &VideoWidget::updateState);
+  QObject::connect(can, &AbstractStream::msgsReceived, this, &VideoWidget::updateState);
 
   updatePlayBtnState();
   setWhatsThis(tr(R"(
@@ -179,6 +181,8 @@ void VideoWidget::vipcAvailableStreamsUpdated(std::set<VisionStreamType> streams
 
 void VideoWidget::loopPlaybackClicked() {
   auto replay = qobject_cast<ReplayStream *>(can)->getReplay();
+  if (!replay) return;
+
   if (replay->hasFlag(REPLAY_FLAG_NO_LOOP)) {
     replay->removeFlag(REPLAY_FLAG_NO_LOOP);
     loop_btn->setIcon("repeat");
@@ -227,7 +231,8 @@ void VideoWidget::updatePlayBtnState() {
 
 // Slider
 
-Slider::Slider(QWidget *parent) : thumbnail_label(parent), QSlider(Qt::Horizontal, parent) {
+Slider::Slider(QWidget *parent) : QSlider(Qt::Horizontal, parent) {
+  thumbnail_label = new InfoLabel(parent);
   setMouseTracking(true);
 }
 
@@ -284,12 +289,23 @@ void Slider::paintEvent(QPaintEvent *ev) {
   double min = minimum() / factor;
   double max = maximum() / factor;
 
-  for (auto [begin, end, type] : qobject_cast<ReplayStream *>(can)->getReplay()->getTimeline()) {
-    if (begin > max || end < min)
-      continue;
+  auto fillRange = [&](double begin, double end, const QColor &color) {
+    if (begin > max || end < min) return;
     r.setLeft(((std::max(min, begin) - min) / (max - min)) * width());
     r.setRight(((std::min(max, end) - min) / (max - min)) * width());
-    p.fillRect(r, timeline_colors[(int)type]);
+    p.fillRect(r, color);
+  };
+
+  const auto replay = qobject_cast<ReplayStream *>(can)->getReplay();
+  for (auto [begin, end, type] : replay->getTimeline()) {
+    fillRange(begin, end, timeline_colors[(int)type]);
+  }
+
+  QColor empty_color = palette().color(QPalette::Window);
+  empty_color.setAlpha(160);
+  for (const auto &[n, seg] : replay->segments()) {
+    if (!(seg && seg->isLoaded()))
+      fillRange(n * 60.0, (n + 1) * 60.0, empty_color);
   }
 
   QStyleOptionSlider opt;
@@ -316,9 +332,9 @@ void Slider::mouseMoveEvent(QMouseEvent *e) {
   if (!thumb.isNull()) {
     int x = std::clamp(pos - thumb.width() / 2, THUMBNAIL_MARGIN, width() - thumb.width() - THUMBNAIL_MARGIN + 1);
     int y = -thumb.height() - THUMBNAIL_MARGIN;
-    thumbnail_label.showPixmap(mapToParent(QPoint(x, y)), utils::formatSeconds(seconds), thumb, alertInfo(seconds));
+    thumbnail_label->showPixmap(mapToParent(QPoint(x, y)), utils::formatSeconds(seconds), thumb, alertInfo(seconds));
   } else {
-    thumbnail_label.hide();
+    thumbnail_label->hide();
   }
   QSlider::mouseMoveEvent(e);
 }
@@ -330,7 +346,7 @@ bool Slider::event(QEvent *event) {
     case QEvent::FocusIn:
     case QEvent::FocusOut:
     case QEvent::Leave:
-      thumbnail_label.hide();
+      thumbnail_label->hide();
       break;
     default:
       break;

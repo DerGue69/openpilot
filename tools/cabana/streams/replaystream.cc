@@ -15,7 +15,7 @@ ReplayStream::ReplayStream(QObject *parent) : AbstractStream(parent) {
   op_prefix = std::make_unique<OpenpilotPrefix>();
 #endif
 
-  QObject::connect(&settings, &Settings::changed, [this]() {
+  QObject::connect(&settings, &Settings::changed, this, [this]() {
     if (replay) replay->setSegmentCacheLimit(settings.max_cached_minutes);
   });
 }
@@ -28,15 +28,25 @@ void ReplayStream::mergeSegments() {
   for (auto &[n, seg] : replay->segments()) {
     if (seg && seg->isLoaded() && !processed_segments.count(n)) {
       processed_segments.insert(n);
-      const auto &events = seg->log->events;
-      mergeEvents(events.cbegin(), events.cend());
+
+      std::vector<const CanEvent *> new_events;
+      new_events.reserve(seg->log->events.size());
+      for (auto it = seg->log->events.cbegin(); it != seg->log->events.cend(); ++it) {
+        if ((*it)->which == cereal::Event::Which::CAN) {
+          const uint64_t ts = (*it)->mono_time;
+          for (const auto &c : (*it)->event.getCan()) {
+            new_events.push_back(newEvent(ts, c));
+          }
+        }
+      }
+      mergeEvents(new_events);
     }
   }
 }
 
 bool ReplayStream::loadRoute(const QString &route, const QString &data_dir, uint32_t replay_flags) {
   replay.reset(new Replay(route, {"can", "roadEncodeIdx", "driverEncodeIdx", "wideRoadEncodeIdx", "carParams"},
-                          {}, {}, nullptr, replay_flags, data_dir, this));
+                          {}, nullptr, replay_flags, data_dir, this));
   replay->setSegmentCacheLimit(settings.max_cached_minutes);
   replay->installEventFilter(event_filter, this);
   QObject::connect(replay.get(), &Replay::seekedTo, this, &AbstractStream::seekedTo);
@@ -52,7 +62,6 @@ void ReplayStream::start() {
 
 bool ReplayStream::eventFilter(const Event *event) {
   static double prev_update_ts = 0;
-  // delay posting CAN message if UI thread is busy
   if (event->which == cereal::Event::Which::CAN) {
     double current_sec = event->mono_time / 1e9 - routeStartTime();
     for (const auto &c : event->event.getCan()) {
@@ -64,9 +73,8 @@ bool ReplayStream::eventFilter(const Event *event) {
 
   double ts = millis_since_boot();
   if ((ts - prev_update_ts) > (1000.0 / settings.fps)) {
-    if (postEvents()) {
-      prev_update_ts = ts;
-    }
+    emit privateUpdateLastMsgsSignal();
+    prev_update_ts = ts;
   }
   return true;
 }

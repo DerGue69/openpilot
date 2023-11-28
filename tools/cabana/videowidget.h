@@ -5,12 +5,13 @@
 #include <set>
 
 #include <QHBoxLayout>
+#include <QFrame>
 #include <QSlider>
 #include <QTabBar>
-#include <QToolButton>
 
 #include "selfdrive/ui/qt/widgets/cameraview.h"
-#include "tools/cabana/streams/replaystream.h"
+#include "tools/cabana/util.h"
+#include "tools/replay/logreader.h"
 
 struct AlertInfo {
   cereal::ControlsState::AlertStatus status;
@@ -54,7 +55,7 @@ private:
 
   QMap<uint64_t, QPixmap> thumbnails;
   std::map<uint64_t, AlertInfo> alerts;
-  InfoLabel thumbnail_label;
+  InfoLabel *thumbnail_label;
 };
 
 class VideoWidget : public QFrame {
